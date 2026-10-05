@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: nba-player-props
+    runtime: docker
+    plan: starter
+    healthCheckPath: /_stcore/health
+    disk:
+      name: nba-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: NBA_DATA_DIR
+        value: /var/data
+      - key: APP_ACCESS_PASSWORD
+        generateValue: true
+      - key: BALLDONTLIE_API_KEY
+        sync: false
