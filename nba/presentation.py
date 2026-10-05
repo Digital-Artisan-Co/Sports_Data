@@ -3,6 +3,30 @@ import pandas as pd
 from nba.model import STATS
 
 
+def game_labels(rows, games):
+    """Human-readable labels while keeping provider IDs as filter values."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from nba.schedule import SLATE_TZ
+    names = {r['team']: r.get('team_name') or r['team'] for r in rows.to_dict('records')}
+    schedule = {str(g['game_id']): g for g in games}
+    labels = {}
+    for game_id, group in rows.groupby('game_id', sort=False):
+        first = group.iloc[0]
+        game = schedule.get(str(game_id), {})
+        if game.get('away') and game.get('home'):
+            matchup = f"{names.get(game['away'], game['away'])} at {names.get(game['home'], game['home'])}"
+        else:
+            matchup = f"{names.get(first['team'], first['team'])} vs {names.get(first['opponent'], first['opponent'])}"
+        try:
+            tip = datetime.fromisoformat(str(game.get('game_time') or first.get('game_time')).replace('Z', '+00:00'))
+            when = tip.astimezone(ZoneInfo(SLATE_TZ)).strftime('%b %d · %I:%M %p ET') if tip.tzinfo else 'Tipoff unavailable'
+        except (ValueError, TypeError):
+            when = 'Tipoff unavailable'
+        labels[str(game_id)] = f'{matchup} · {when}'
+    return labels
+
+
 def player_overview(rows, stat='All'):
     labels = STATS if stat == 'All' else {stat: STATS[stat]}
     columns = ['Player', 'Matchup', 'Minutes', *labels]

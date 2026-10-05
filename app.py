@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo
 from nba.pipeline import run, validate_bundle
 from nba.audit import audit, metrics, capture, train_bias
 from nba.sync import load_date
-from nba.presentation import render_player_props
+from nba.presentation import render_player_props, game_labels
 
 st.set_page_config(page_title='NBA Player Props Model',layout='wide')
 # Streamlit Community Cloud supplies secrets via st.secrets, not always os.environ.
@@ -193,8 +193,10 @@ elif page=='Player Props':
             cols=st.columns(3);cols[0].metric('Players',df.player_id.nunique());cols[1].metric('Games',df.game_id.nunique());cols[2].metric('Props with lines',int(df.line.notna().sum()))
             choices=st.columns(4)
             filters={}
+            matchups=game_labels(df, scheduled)
             for col,key,label in zip(choices,['team','game_id','player','sportsbook'],['Team','Game','Player','Sportsbook']):
-                filters[key]=col.multiselect(label,sorted(str(x) for x in df[key].dropna().unique()))
+                filters[key]=col.multiselect(label,sorted(str(x) for x in df[key].dropna().unique()),
+                    format_func=(lambda value: matchups.get(value, 'Matchup unavailable')) if key=='game_id' else str)
             stat=st.selectbox('Stat type',['All',*STATS]);minimum=st.slider('Minimum minutes projection',0,48,0)
             view=df.copy()
             for key,values in filters.items():
