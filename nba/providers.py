@@ -8,7 +8,7 @@ KEYS={'BallDontLie':'BALLDONTLIE_API_KEY','SportsDataIO':'SPORTSDATAIO_API_KEY',
 class ProviderError(RuntimeError): pass
 
 class Providers:
-    def __init__(self): self.health={}
+    def __init__(self,allow_snapshots=True,prefer_snapshots=False): self.health={}; self.allow_snapshots=allow_snapshots; self.prefer_snapshots=prefer_snapshots
     def get(self, provider, endpoint, params=None):
         key=KEYS.get(provider)
         if key and not os.getenv(key):
@@ -70,6 +70,13 @@ class Providers:
         path=paths[resource]; suffix='' if resource=='injuries' else '/'+date
         return self.get('SportsDataIO','https://api.sportsdata.io/'+path+suffix)
     def nba_logs(self,season,season_type="Regular Season"):
+        if self.allow_snapshots and getattr(self,'prefer_snapshots',False):
+            from .snapshots import load_snapshot
+            try:
+                rows,health=load_snapshot('logs',season,season_type)
+                self.health['NBA.com']=health
+                return rows
+            except ValueError:pass
         try:
             from nba_api.stats.endpoints import leaguegamelog
             records=leaguegamelog.LeagueGameLog(season=season,season_type_all_star=season_type,player_or_team_abbreviation='P',timeout=25).get_data_frames()[0].to_dict('records')
@@ -78,7 +85,14 @@ class Providers:
             return output
         except Exception as exc:
             self.health['NBA.com']={'status':f'UNAVAILABLE — {type(exc).__name__}','failed_endpoint':'stats.nba.com/stats/leaguegamelog'}
-            raise ProviderError('NBA.com game logs unavailable; use another provider or cached snapshot') from None
+            if self.allow_snapshots:
+                from .snapshots import load_snapshot
+                try:
+                    rows,health=load_snapshot('logs',season,season_type)
+                    self.health['NBA.com']=health
+                    return rows
+                except ValueError:pass
+            raise ProviderError('NBA.com game logs unavailable; no usable saved snapshot for this season') from None
 
     def nba_schedule(self, date):
         data=self.get('NBA schedule','https://cdn.nba.com/static/json/staticData/scheduleLeagueV2_1.json')
@@ -93,6 +107,13 @@ class Providers:
         return output
 
     def nba_roster(self, season):
+        if self.allow_snapshots and getattr(self,'prefer_snapshots',False):
+            from .snapshots import load_snapshot
+            try:
+                rows,health=load_snapshot('roster',season)
+                self.health['NBA roster']=health
+                return rows
+            except ValueError:pass
         try:
             from nba_api.stats.endpoints import commonallplayers
             records=commonallplayers.CommonAllPlayers(is_only_current_season=1,season=season,timeout=25).get_data_frames()[0].to_dict('records')
@@ -102,7 +123,14 @@ class Providers:
             return result
         except Exception as exc:
             self.health['NBA roster']={'status':f'UNAVAILABLE — {type(exc).__name__}'}
-            raise ProviderError('NBA current roster unavailable; no previous-season roster will be substituted') from None
+            if self.allow_snapshots:
+                from .snapshots import load_snapshot
+                try:
+                    rows,health=load_snapshot('roster',season)
+                    self.health['NBA roster']=health
+                    return rows
+                except ValueError:pass
+            raise ProviderError('NBA current roster unavailable; no fresh current-season snapshot available') from None
 
     def espn_schedule(self, date, roster):
         from .schedule import normalize_espn

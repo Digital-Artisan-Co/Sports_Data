@@ -21,3 +21,7 @@ Sign in at https://share.streamlit.io with the GitHub account that can access Di
 Use the app's Load schedule and player data button, then Build free NBA slate. That imports a baseline season if no logs are cached, loads the selected Eastern-date slate (including preseason), and joins current NBA roster IDs. For preseason, previous preseason minutes are used only if observed before the run; absent minutes remain N/A. Regular-season averages are labeled reference values, not preseason projections.
 
 Free Community Cloud disk storage is not durable across app rebuilds or replacement. Download/export important pregame snapshots and audit data before redeploying. For retained SQLite audit history, use the persistent Render deployment described above. No Streamlit account connection or public app URL has been created by this task.
+
+### Live-host verification and snapshot fallback
+
+The deployed Streamlit app returned RUNNING and a healthy app endpoint, but its NBA.com game-log request failed. Real provider snapshots are now included and preferred by the UI, with read-only refreshes from the repository's `nba-data` branch. Snapshot freshness is enforced separately from the server health check. This requires outbound access to raw.githubusercontent.com and site.api.espn.com; NBA.com is used by the refresh job. No API credentials are embedded in the snapshot files. Review the scheduled refresh workflow's actual outcome in GitHub Actions; a configured schedule alone is not proof it is running successfully.

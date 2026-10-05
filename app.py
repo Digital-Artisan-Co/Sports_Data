@@ -38,7 +38,7 @@ if os.getenv('APP_ACCESS_PASSWORD'):
 st.title('NBA Player Props Model')
 st.caption('Auditable individual-stat projections · Baseline models are not yet historically calibrated')
 pd.set_option('future.no_silent_downcasting', True)
-store=Store(); providers=st.session_state.setdefault('providers',Providers())
+store=Store(); providers=st.session_state.setdefault('providers',Providers(prefer_snapshots=True))
 page=st.sidebar.radio('Section',['Player Props','Completed Games Audit','NBA Model Retraining','Historical Backtesting','Data Sources & Import'],key='section')
 selected_date=st.sidebar.date_input('Date',datetime.now(ZoneInfo(SLATE_TZ)).date(),key='slate_date')
 cutoff=datetime.combine(selected_date,time.min,tzinfo=timezone.utc)
@@ -90,9 +90,13 @@ if page=='Data Sources & Import':
                 if not bundle['players']:raise ValueError('No current roster players matched this schedule.')
                 st.session_state['bundle']=bundle
                 DATA_DIR.mkdir(parents=True,exist_ok=True)
+                bundle['provider_health']=dict(providers.health)
                 save_cache('last_bundle.json',bundle)
             st.success(f"Built {len(bundle['players'])} player-game entries. Open Player Props in the sidebar.")
             st.caption(bundle['source'])
+            for source,health in providers.health.items():
+                if health.get('status','').startswith('CACHED'):
+                    st.info(source+': using real saved NBA data retrieved '+health['retrieved_at']+' ('+str(health['age_hours'])+' hours old).')
             st.info('Baseline projections only. Injuries, advanced tracking and sportsbook lines are not supplied by this import; recommendations remain gated.')
         except (ProviderError,ValueError,KeyError) as e:st.error(str(e))
     cols=st.columns(3)
@@ -168,6 +172,9 @@ elif page=='Player Props':
     else:
         scheduled=[g for g in bundle.get('games',[]) if slate_day(g['game_time'])==str(selected_date)]
         if scheduled:
+            for source,health in bundle.get('provider_health',{}).items():
+                if health.get('status','').startswith('CACHED'):
+                    st.caption(source+': saved NBA data retrieved '+health['retrieved_at'])
             st.subheader('Game schedule')
             st.dataframe(pd.DataFrame([{'Away':g['away'],'Home':g['home'],'Season':g.get('season_type','Unknown'),
                 'Tipoff (Eastern)':datetime.fromisoformat(g['game_time'].replace('Z','+00:00')).astimezone(ZoneInfo(SLATE_TZ)).strftime('%I:%M %p'),
@@ -247,4 +254,6 @@ with st.expander('Data Source Health Panel',expanded=False):
         status=providers.health.get(name,{'status':'Configured — not yet verified' if os.getenv(key) else 'UNAVAILABLE — missing API key','required_key':key})
         st.write(name,status)
     st.write('NBA.com',providers.health.get('NBA.com',{'status':'Not checked'}))
+    for source in ('NBA roster','ESPN schedule'):
+        st.write(source,providers.health.get(source,{'status':'Not checked'}))
     st.caption('Line snapshots older than six hours are stale and cannot generate a recommendation. A configured key is not proof of a successful sync.')

@@ -4,6 +4,7 @@ COPY requirements.lock.txt .
 RUN pip install --no-cache-dir -r requirements.lock.txt
 COPY app.py ./
 COPY nba ./nba
+COPY snapshots ./snapshots
 RUN useradd --create-home --uid 10001 appuser && mkdir -p /app/data /var/data && chown -R appuser:appuser /app /var/data
 USER appuser
 ENV NBA_DATA_DIR=/app/data
