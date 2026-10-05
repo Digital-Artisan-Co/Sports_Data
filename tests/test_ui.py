@@ -9,24 +9,25 @@ def test_empty_pages_render():
         assert not app.exception
 
 
-def test_empty_slate_offers_returned_dates():
-    from datetime import date
-    class Provider:
-        health={}
-        def nba_roster(self,season):return []
-        def free_schedule(self,date,roster):return []
-        def upcoming_dates(self,date,roster):return ['2026-10-20']
+def test_date_selection_imports_once_and_clears_previous_date(monkeypatch):
+    from datetime import date,datetime,timezone
+    from nba import sync
+    calls=[]
+    def load(provider,day,**kwargs):
+        calls.append(day)
+        return {'date':day,'loaded_at':datetime.now(timezone.utc).isoformat(),'historical':False,
+                'games':[],'bundle':None,'actual_rows':[],'saved_rows':[],'warnings':[], 'stages':[],'error':None}
+    monkeypatch.setattr(sync,'load_date',load)
     app=AppTest.from_file(str(Path(__file__).resolve().parents[1] / 'app.py')).run()
-    app.session_state['providers']=Provider()
-    app.session_state['nba_logs']=[{'player_id':'fixture'}]
-    app.session_state['slate_date']=date(2026,10,5)
-    app.sidebar.radio[0].set_value('Data Sources & Import').run()
-    next(b for b in app.button if b.label=='Build free NBA slate').click().run()
+    assert len(calls)==1
+    app.sidebar.date_input[0].set_value(date(2026,10,6)).run()
+    assert calls[-1]=='2026-10-06' and len(calls)==2
+    app.run()
+    assert len(calls)==2
+    app.sidebar.date_input[0].set_value(date(2026,10,7)).run()
+    assert app.session_state['date_result']['date']=='2026-10-07'
+    assert app.session_state['bundle'] is None
     assert not app.exception
-    dates=next(s for s in app.selectbox if s.label=='Upcoming dates returned by the schedule provider')
-    assert dates.value=='2026-10-20'
-    next(b for b in app.button if b.label=='Use this slate date').click().run()
-    assert app.session_state['slate_date']==date(2026,10,20)
 
 
 def test_deployment_password_gate(monkeypatch):

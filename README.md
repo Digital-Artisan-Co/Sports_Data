@@ -76,3 +76,11 @@ The app can now read named provider bindings and APP_ACCESS_PASSWORD from Stream
 Streamlit Community Cloud could start the app but could not retrieve NBA game logs. The app now prefers verified NBA snapshots when available, displaying their source and retrieval time. Bundled snapshots were fetched from NBA.com via nba_api, not generated. Current rosters, preseason logs and current-season regular logs expire after 24 hours; completed-season historical logs can remain available. Unavailable or stale data stays unavailable.
 
 The Refresh real NBA snapshots workflow runs every six hours and can be dispatched manually. It publishes updated gzip snapshots to the `nba-data` branch, which the app reads over verified HTTPS. Data-only branch updates do not rebuild the deployed `main` app. A failed refresh preserves the prior snapshots and reports failure. Scheduled execution and provider availability are not guaranteed; source ages remain visible. This is separate from backing up the app's SQLite audit database.
+
+## Automatic date imports
+
+Choose a date in the sidebar on Player Props or Data Sources & Import. The app automatically loads its Eastern-date schedule, appropriate season history, current roster for upcoming dates, and preseason minutes when applicable. Configured BallDontLie injuries and The Odds API lines are imported automatically; exact player name, team pairing and tipoff must match before a prop is attached. Missing keys or optional endpoint failures remain visible without hiding players. SportsDataIO raw imports remain optional diagnostics, not a required part of the free workflow.
+
+Each date has a separate 10-minute session cache and a dated cache file under data/slates. Changing filters does not repeat imports. Refresh selected date retries its imports. An empty date shows no games; a failed date never displays the previous date's slate. Previous cache versions and immutable SQLite pregame snapshots are preserved.
+
+Past dates import the historical schedule and available final NBA box scores, matching both teams and the game date. They display original saved pregame predictions when present. They do not import current rosters, odds, or injuries, and never reconstruct pregame predictions from final box scores. Historical context that was never saved remains N/A.

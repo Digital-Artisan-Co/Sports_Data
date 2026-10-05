@@ -34,7 +34,9 @@ def project(player, logs, stat, cutoff, context=None):
     eligible=[g for g in logs if str(g['player_id'])==str(player['player_id']) and instant(g['date'])<cutoff and instant(g.get('known_at',g['date']))<cutoff and g.get('min',0)>0]
     eligible=sorted(eligible,key=lambda g:g['date'],reverse=True)
     # Never combine seasons if a season identifier is supplied.
-    if eligible and eligible[0].get('season') is not None: eligible=[g for g in eligible if g.get('season')==eligible[0]['season']]
+    if eligible and eligible[0].get('season') is not None:
+        current=[g for g in eligible if g.get('season')==eligible[0]['season']]
+        if len(current)>=5:eligible=current
     base={**player,'stat':stat,'projection':None,'confidence':None,'missing':[], 'model_version':'baseline-1','projected_minutes':None,'role_security':None,'opportunity':None,'matchup':None,'ceiling':None,'recent_form':None,'injury_boost':None,'injury_status':context.get('injury_status','Unknown')}
     if player.get('season_type')=='Preseason' and context.get('projected_minutes') is None:
         prior_minutes=sum(g['min'] for g in eligible)

@@ -14,6 +14,7 @@ from nba.schedule import slate_day, SLATE_TZ
 from zoneinfo import ZoneInfo
 from nba.pipeline import run, validate_bundle
 from nba.audit import audit, metrics, capture, train_bias
+from nba.sync import load_date
 
 st.set_page_config(page_title='NBA Player Props Model',layout='wide')
 # Streamlit Community Cloud supplies secrets via st.secrets, not always os.environ.
@@ -44,61 +45,47 @@ selected_date=st.sidebar.date_input('Date',datetime.now(ZoneInfo(SLATE_TZ)).date
 cutoff=datetime.combine(selected_date,time.min,tzinfo=timezone.utc)
 st.sidebar.caption('Slate dates use Eastern Time (America/New_York), including late games after midnight UTC. Stored timestamps remain UTC.')
 
+
+
+def refresh_date():
+    st.session_state.setdefault('date_results',{}).pop(str(selected_date),None)
+    if hasattr(providers,'_date_import_cache'):providers._date_import_cache.clear()
+
+st.sidebar.button('Refresh selected date',on_click=refresh_date)
+if page in ('Player Props','Data Sources & Import'):
+    cache=st.session_state.setdefault('date_results',{})
+    key=str(selected_date)
+    current=cache.get(key)
+    expired=current and (datetime.now(timezone.utc)-datetime.fromisoformat(current['loaded_at'])).total_seconds()>600
+    if current is None or expired:
+        # Clear displayed data first; a failed new date must never show the old slate.
+        st.session_state.pop('bundle',None)
+        with st.status('Importing '+key+' automatically…',expanded=True) as status:
+            try:
+                current=load_date(providers,key,snapshots=store.snapshots(),progress=st.write)
+                for actual in current['actual_rows']:store.result(actual)
+                save_cache('slates/'+key+'.json',current)
+                status.update(label='Loaded '+key,state='complete',expanded=False)
+            except (ProviderError,ValueError,KeyError,OSError) as e:
+                current={'date':key,'loaded_at':datetime.now(timezone.utc).isoformat(),'historical':False,
+                         'games':[],'bundle':None,'actual_rows':[],'saved_rows':[], 'warnings':[],'stages':[],'error':str(e)}
+                status.update(label='Import unavailable for '+key,state='error',expanded=True)
+                st.error(str(e))
+        cache[key]=current
+    st.session_state['date_result']=current
+    st.session_state['bundle']=current.get('bundle')
+    if current.get('error'):st.error('Could not load '+key+': '+current['error']+'. Use Refresh selected date to retry.')
+    elif not current['games']:st.info('No games returned for '+key+' (Eastern). Choose another date.')
+    else:st.caption('Automatically loaded '+key+' · '+str(len(current['games']))+' games · '+current['loaded_at'])
+    for warning in current.get('warnings',[]):st.warning(warning)
+
 if page=='Data Sources & Import':
     st.subheader('Data Source Health Panel')
     for provider,key in KEYS.items():
         st.write(provider, providers.health.get(provider,{'status':'Configured — not yet verified' if os.getenv(key) else 'UNAVAILABLE — missing API key','required_key':key}))
     st.write('NBA.com',providers.health.get('NBA.com',{'status':'Not yet checked; no API key required'}))
     st.info('Provider subscription tiers may restrict injuries, advanced statistics, or prop markets. Raw imports retain provider IDs; cross-provider player/game mappings require explicit matching.')
-    st.subheader('Free NBA workflow — preseason included')
-    st.caption('ESPN schedules include preseason games. NBA.com supplies current rosters and historical logs. The build button imports baseline logs automatically if none are cached. No API key is required for this workflow. Preseason projections require observed preseason minutes; otherwise they remain N/A.')
-    if st.session_state.get('no_games_date')==str(selected_date):
-        st.info('No games returned for this date. Choose an available date below, then build the slate.')
-    if st.session_state.get('available_dates'):
-        candidate=st.selectbox('Upcoming dates returned by the schedule provider',st.session_state['available_dates'])
-        def choose_date():
-            st.session_state['slate_date']=date.fromisoformat(candidate)
-        st.button('Use this slate date',on_click=choose_date)
-    if st.button('Build free NBA slate'):
-        try:
-            logs=st.session_state.get('nba_logs',[])
-            if not logs and (DATA_DIR/'nba_logs.json').exists():logs=json.loads((DATA_DIR/'nba_logs.json').read_text())
-            if not logs:
-                year=selected_date.year if selected_date.month>=10 else selected_date.year-1
-                logs=providers.nba_logs(f'{year-1}-{str(year)[-2:]}')
-                save_cache('nba_logs.json',logs)
-            with st.spinner('Loading NBA schedule and current rosters…'):
-                year=selected_date.year if selected_date.month>=10 else selected_date.year-1
-                roster=providers.nba_roster(f'{year}-{str(year+1)[-2:]}')
-                games=providers.free_schedule(str(selected_date),roster)
-                if not games:
-                    st.info('The schedule provider returned no games for this date. This is not an API-key error.')
-                    dates=providers.upcoming_dates(str(selected_date),roster)
-                    st.session_state['available_dates']=dates
-                    if dates:
-                        st.session_state['no_games_date']=str(selected_date)
-                        st.rerun()
-                    else:st.info('No upcoming games returned within 45 days.')
-                    st.stop()
-                bundle=build_nba_slate(games,roster,logs)
-                if any(g.get('season_type')=='Preseason' for g in games):
-                    try:preseason_logs=providers.nba_logs(f'{year}-{str(year+1)[-2:]}','Pre Season')
-                    except ProviderError:
-                        preseason_logs=[]
-                        st.warning('Preseason logs unavailable. Players are listed, but preseason projections remain N/A.')
-                    bundle=add_preseason_context(bundle,preseason_logs,datetime.now(timezone.utc).isoformat())
-                if not bundle['players']:raise ValueError('No current roster players matched this schedule.')
-                st.session_state['bundle']=bundle
-                DATA_DIR.mkdir(parents=True,exist_ok=True)
-                bundle['provider_health']=dict(providers.health)
-                save_cache('last_bundle.json',bundle)
-            st.success(f"Built {len(bundle['players'])} player-game entries. Open Player Props in the sidebar.")
-            st.caption(bundle['source'])
-            for source,health in providers.health.items():
-                if health.get('status','').startswith('CACHED'):
-                    st.info(source+': using real saved NBA data retrieved '+health['retrieved_at']+' ('+str(health['age_hours'])+' hours old).')
-            st.info('Baseline projections only. Injuries, advanced tracking and sportsbook lines are not supplied by this import; recommendations remain gated.')
-        except (ProviderError,ValueError,KeyError) as e:st.error(str(e))
+    st.info('Changing the sidebar date automatically imports the schedule, season history, roster and available configured odds/injuries. The controls below are optional diagnostics and manual imports.')
     cols=st.columns(3)
     with cols[0]:
         if st.button('Import schedule (BallDontLie)'):
@@ -119,7 +106,7 @@ if page=='Data Sources & Import':
                 st.session_state['nba_logs']=logs
                 DATA_DIR.mkdir(parents=True,exist_ok=True)
                 save_cache('nba_logs.json',logs)
-                st.success(f"Imported {len(logs)} records. Now click Build free NBA slate above.")
+                st.success(f"Imported {len(logs)} records. Date imports run automatically.")
             except ProviderError as e:st.error(str(e))
     with cols[2]:
         if st.button('Import sportsbook lines'):
@@ -135,7 +122,10 @@ if page=='Data Sources & Import':
     if uploaded:
         try:
             bundle=validate_bundle(json.load(uploaded));st.session_state['bundle']=bundle
-            DATA_DIR.mkdir(parents=True,exist_ok=True);save_cache('last_bundle.json',bundle);st.success('Snapshot loaded and cached')
+            DATA_DIR.mkdir(parents=True,exist_ok=True);save_cache('last_bundle.json',bundle)
+            result=st.session_state['date_result'];result['bundle']=bundle;result['error']=None
+            result['games']=bundle.get('games',result['games']);result['historical']=False
+            st.success('Snapshot loaded and cached; only rows matching the selected date will display')
         except (ValueError,KeyError,TypeError) as e:st.error(str(e))
     if st.button('Build slate from BallDontLie schedule and logs'):
         games=st.session_state.get('schedule',[]);logs=st.session_state.get('logs',[])
@@ -163,11 +153,22 @@ if page=='Data Sources & Import':
 
 elif page=='Player Props':
     bundle=st.session_state.get('bundle')
-    if not bundle and (DATA_DIR/'last_bundle.json').exists():bundle=json.loads((DATA_DIR/'last_bundle.json').read_text())
-    if not bundle:
+    date_result=st.session_state['date_result']
+    if date_result.get('historical'):
+        st.subheader('Historical date: '+str(selected_date))
+        if date_result['games']:
+            st.dataframe(pd.DataFrame(date_result['games']).reindex(columns=['away','home','season_type','game_status']),hide_index=True)
+        if date_result['actual_rows']:
+            st.subheader('Completed player results')
+            st.dataframe(pd.DataFrame(date_result['actual_rows']),hide_index=True)
+        if date_result['saved_rows']:
+            st.subheader('Saved pregame predictions')
+            st.dataframe(pd.DataFrame(date_result['saved_rows']).drop(columns=['recent_stats','season_stats','context'],errors='ignore'),hide_index=True)
+        else:st.info('No saved pregame predictions for this date. Actual results are not used to invent historical predictions.')
+    elif not bundle:
         def open_import():st.session_state['section']='Data Sources & Import'
         st.button('Load schedule and player data',on_click=open_import)
-        st.info('No real player data loaded. Configure a provider or import a saved snapshot in Data Sources & Import.')
+        if date_result.get('games'):st.info('Schedule loaded, but player data is unavailable. See the source status above.')
         st.warning('No current player prop lines available. Import or configure odds provider.')
     else:
         scheduled=[g for g in bundle.get('games',[]) if slate_day(g['game_time'])==str(selected_date)]
@@ -206,7 +207,7 @@ elif page=='Player Props':
                     elif key=='top3_spike':view=view[view.top3_spike.fillna(0)>=70]
                     elif key=='injury_boost':view=view[view.get(key,pd.Series(index=view.index,dtype=float)).fillna(0)>1]
                     else:view=view[view.hidden_ceiling==True]
-            for title,subset in [('Top Prop Recommendations',view[view.recommendation.str.contains('Over|Under')]),('Top-3 Candidate Rankings by Stat',view.sort_values('top3_spike',ascending=False)),('Hidden Ceiling Watchlist',view[view.hidden_ceiling==True]),('Injury Boost Watchlist',view[view.get('injury_boost',pd.Series(index=view.index,dtype=float)).fillna(0)>1]),('Role / Minutes Volatility Watchlist',view[view.get('role_security',pd.Series(index=view.index,dtype=float)).fillna(100)<60])]:
+            for title,subset in [('Top Prop Recommendations',view[view.recommendation.str.contains('Over|Under')]),('Top-3 Candidate Rankings by Stat',view.dropna(subset=['top3_spike']).sort_values('top3_spike',ascending=False)),('Hidden Ceiling Watchlist',view[view.hidden_ceiling==True]),('Injury Boost Watchlist',view[view.get('injury_boost',pd.Series(index=view.index,dtype=float)).fillna(0)>1]),('Role / Minutes Volatility Watchlist',view[view.get('role_security',pd.Series(index=view.index,dtype=float)).fillna(100)<60])]:
                 with st.expander(title):st.dataframe(subset.drop(columns=['recent_stats','season_stats','context'],errors='ignore'),hide_index=True)
             st.subheader('Main Player Props Table')
             st.dataframe(view.drop(columns=['recent_stats','season_stats','context'],errors='ignore'),hide_index=True)

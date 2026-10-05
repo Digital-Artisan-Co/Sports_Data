@@ -54,7 +54,8 @@ class Providers:
         rows=[]
         mapping={'player_points':'pts','player_rebounds':'reb','player_assists':'ast','player_threes':'fg3m','player_steals':'stl','player_blocks':'blk'}
         for event in events:
-            if event['commence_time'][:10]!=date: continue
+            from .schedule import slate_day
+            if slate_day(event['commence_time'])!=date: continue
             data=self.get('The Odds API',f"https://api.the-odds-api.com/v4/sports/basketball_nba/events/{event['id']}/odds",{'regions':'us','markets':','.join(mapping),'oddsFormat':'american'})
             for book in data.get('bookmakers',[]):
                 for market in book['markets']:

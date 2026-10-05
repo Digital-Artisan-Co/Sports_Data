@@ -2,7 +2,6 @@
 from .model import instant
 
 def build_nba_slate(games, roster, logs):
-    if not logs: raise ValueError('Import NBA.com game logs first.')
     players=[]
     seen=set()
     for game in games:
