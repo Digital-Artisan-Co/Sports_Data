@@ -43,16 +43,67 @@ def player_overview(rows, stat='All'):
     return pd.DataFrame(records, columns=columns), identities
 
 
+# Fixed colors keep confidence comparable across dates, players and stat types.
+CONFIDENCE_BANDS = [
+    (90, 'Elite', '#166534', '#ffffff'),
+    (80, 'High', '#bbf7d0', '#14532d'),
+    (70, 'Medium-High', '#d9f99d', '#365314'),
+    (60, 'Medium', '#fef08a', '#713f12'),
+    (50, 'Low', '#fed7aa', '#7c2d12'),
+    (0, 'Very Low', '#fecaca', '#7f1d1d'),
+]
+
+
+def confidence_overview(rows, overview, identities):
+    scores = pd.DataFrame(float('nan'), index=overview.index, columns=overview.columns[3:])
+    # Match the exact row used for each projection, including when books repeat it.
+    lookup = rows.drop_duplicates(['player_id', 'game_id', 'stat']).set_index(['player_id', 'game_id', 'stat'])
+    for i, identity in enumerate(identities):
+        for label in scores.columns:
+            key = (*identity, STATS[label])
+            if key in lookup.index and pd.notna(overview.loc[i, label]):
+                scores.loc[i, label] = lookup.loc[key].get('confidence', float('nan'))
+    return scores
+
+
+def confidence_styles(overview, scores):
+    styles = pd.DataFrame('', index=overview.index, columns=overview.columns)
+    for label in scores.columns:
+        for i, value in scores[label].items():
+            background, foreground = '#e5e7eb', '#374151'
+            if pd.notna(value):
+                for minimum, _, bg, fg in CONFIDENCE_BANDS:
+                    if value >= minimum:
+                        background, foreground = bg, fg
+                        break
+            styles.loc[i, label] = f'background-color: {background}; color: {foreground}'
+    return styles
+
+
 def render_player_props(st, rows, stat='All'):
     overview, identities = player_overview(rows, stat)
     if overview.empty:
         st.info('No players match these filters.')
         return
     st.caption('One row per player per game. Numbers are projected totals. A dash means unavailable or excluded by your filters. Select a player below for betting lines and model details.')
-    st.dataframe(overview, hide_index=True, width='stretch', column_config={
+    scores = confidence_overview(rows, overview, identities)
+    legend = ' '.join(
+        f'<span style="display:inline-block;background:{bg};color:{fg};padding:3px 8px;margin:2px;border-radius:4px">{label} {minimum}–{100 if minimum == 90 else minimum + 9 if minimum else 49}</span>'
+        for minimum, label, bg, fg in CONFIDENCE_BANDS)
+    st.markdown('**Confidence / 100:** ' + legend +
+        ' <span style="display:inline-block;background:#e5e7eb;color:#374151;padding:3px 8px;border-radius:4px">N/A</span>', unsafe_allow_html=True)
+    st.caption('Each stat cell has its own confidence color. Confidence is model reliability, not the probability of winning a bet. Gray means the projection or confidence is unavailable.')
+    show_scores = st.checkbox('Show confidence scores instead of projected totals', key='overview_confidence_scores')
+    display = overview.copy()
+    if show_scores:
+        display[scores.columns] = scores
+    styles = confidence_styles(overview, scores)
+    styled = display.style.apply(lambda _: styles, axis=None)
+    st.dataframe(styled, hide_index=True, width='stretch', column_config={
         'Player': st.column_config.TextColumn(width='medium'),
         'Matchup': st.column_config.TextColumn(width='small'),
-        **{name: st.column_config.NumberColumn(format='%.1f', width='small') for name in overview.columns[2:]},
+        **{name: st.column_config.NumberColumn(format='%.0f' if show_scores and name != 'Minutes' else '%.1f', width='small',
+            help='Confidence out of 100' if show_scores and name != 'Minutes' else 'Projected total; cell color shows confidence' if name != 'Minutes' else 'Projected minutes') for name in overview.columns[2:]},
     })
     labels = {identity: f"{overview.iloc[i]['Player']} · {overview.iloc[i]['Matchup']}" for i, identity in enumerate(identities)}
     selected = st.selectbox('Player details', identities, format_func=labels.get)
