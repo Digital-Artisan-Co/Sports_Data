@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo
 from nba.pipeline import run, validate_bundle
 from nba.audit import audit, metrics, capture, train_bias
 from nba.sync import load_date
+from nba.presentation import render_player_props
 
 st.set_page_config(page_title='NBA Player Props Model',layout='wide')
 # Streamlit Community Cloud supplies secrets via st.secrets, not always os.environ.
@@ -210,7 +211,7 @@ elif page=='Player Props':
             for title,subset in [('Top Prop Recommendations',view[view.recommendation.str.contains('Over|Under')]),('Top-3 Candidate Rankings by Stat',view.dropna(subset=['top3_spike']).sort_values('top3_spike',ascending=False)),('Hidden Ceiling Watchlist',view[view.hidden_ceiling==True]),('Injury Boost Watchlist',view[view.get('injury_boost',pd.Series(index=view.index,dtype=float)).fillna(0)>1]),('Role / Minutes Volatility Watchlist',view[view.get('role_security',pd.Series(index=view.index,dtype=float)).fillna(100)<60])]:
                 with st.expander(title):st.dataframe(subset.drop(columns=['recent_stats','season_stats','context'],errors='ignore'),hide_index=True)
             st.subheader('Main Player Props Table')
-            st.dataframe(view.drop(columns=['recent_stats','season_stats','context'],errors='ignore'),hide_index=True)
+            render_player_props(st, view, stat)
             if df.line.isna().all():st.warning('No current player prop lines available. Import or configure odds provider.')
             st.caption('Null cells mean N/A. Missing tracking inputs lower confidence; opportunity and matchup remain unavailable until supported by observed context.')
             if st.button('Save immutable pregame snapshot'):
