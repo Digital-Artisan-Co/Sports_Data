@@ -56,6 +56,7 @@ st.sidebar.caption('Slate dates use Eastern Time (America/New_York), including l
 
 def refresh_date():
     st.session_state.setdefault('date_results',{}).pop(str(selected_date),None)
+    st.session_state.pop('lineup_cache',None)
     if hasattr(providers,'_date_import_cache'):providers._date_import_cache.clear()
 
 st.sidebar.button('Refresh selected date',on_click=refresh_date)
@@ -161,6 +162,9 @@ if page=='Data Sources & Import':
 elif page=='Player Props':
     bundle=st.session_state.get('bundle')
     date_result=st.session_state['date_result']
+    if date_result.get('games'):
+        from nba.lineups import render_lineups
+        render_lineups(date_result['games'],str(selected_date),date_result['loaded_at'])
     if date_result.get('historical'):
         st.subheader('Historical date: '+str(selected_date))
         if date_result['games']:
@@ -183,10 +187,6 @@ elif page=='Player Props':
             for source,health in bundle.get('provider_health',{}).items():
                 if health.get('status','').startswith('CACHED'):
                     st.caption(source+': saved NBA data retrieved '+health['retrieved_at'])
-            st.subheader('Game schedule')
-            st.dataframe(pd.DataFrame([{'Away':g['away'],'Home':g['home'],'Season':g.get('season_type','Unknown'),
-                'Tipoff (Eastern)':datetime.fromisoformat(g['game_time'].replace('Z','+00:00')).astimezone(ZoneInfo(SLATE_TZ)).strftime('%I:%M %p'),
-                'Status':g.get('game_status','Unknown')} for g in scheduled]),hide_index=True)
         scope={**bundle,'players':[p for p in bundle['players'] if slate_day(p['game_time'])==str(selected_date)]}
         now=datetime.now(timezone.utc)
         rows=run(scope,now.isoformat(),calibration=store.active_calibration())
