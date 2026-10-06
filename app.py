@@ -219,8 +219,8 @@ elif page=='Player Props':
                     elif key=='top3_spike':view=view[view.top3_spike.fillna(0)>=70]
                     elif key=='injury_boost':view=view[view.get(key,pd.Series(index=view.index,dtype=float)).fillna(0)>1]
                     else:view=view[view.hidden_ceiling==True]
-            for title,subset in [('Top Prop Recommendations',view[view.recommendation.str.contains('Over|Under')]),('Top-3 Candidate Rankings by Stat',view.dropna(subset=['top3_spike']).sort_values('top3_spike',ascending=False)),('Hidden Ceiling Watchlist',view[view.hidden_ceiling==True]),('Injury Boost Watchlist',view[view.get('injury_boost',pd.Series(index=view.index,dtype=float)).fillna(0)>1]),('Role / Minutes Volatility Watchlist',view[view.get('role_security',pd.Series(index=view.index,dtype=float)).fillna(100)<60])]:
-                with st.expander(title):st.dataframe(subset.drop(columns=['recent_stats','season_stats','context'],errors='ignore'),hide_index=True)
+            from nba.watchlists import render_watchlists
+            render_watchlists(st, view, df)
             st.subheader('Main Player Props Table')
             render_player_props(st, view, stat)
             if df.line.isna().all():st.warning('No current player prop lines available. Import or configure odds provider.')
