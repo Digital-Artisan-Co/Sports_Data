@@ -42,7 +42,7 @@ def render_review(st, store, providers, selected_date, page):
     cols[0].metric('Saved pregame runs',len(snapshots));cols[1].metric('Final player box scores',len(results));cols[2].metric('Matched prop predictions',len(rows))
     st.caption('Only matched final participant box scores are scored; DNPs are excluded. Final results sync automatically. Audits use the latest saved pregame prediction for each player/stat/book. Dates use Eastern Time.')
     default_start=day-timedelta(days=30)
-    selected=st.date_input('Date range',(default_start,day),key='review_dates')
+    selected=st.date_input('Date range',(default_start,day),key='review_dates_'+str(selected_date))
     start,end=(str(selected[0]),str(selected[1])) if isinstance(selected,tuple) and len(selected)==2 else (str(default_start),str(day))
     filtered=[r for r in rows if start<=slate_day(r['game_time'])<=end]
     if rows:
@@ -110,7 +110,9 @@ def render_training(st,store,providers,rows,today):
     if candidates:
         latest=candidates[-1]
         st.write('Latest training run: '+latest['created'])
-        st.dataframe(pd.DataFrame(latest['validation']),hide_index=True,width='stretch')
+        report=pd.DataFrame(latest['validation'])
+        report['Stat']=report.Stat.map({v:k for k,v in STATS.items()})
+        st.dataframe(report,hide_index=True,width='stretch')
         st.caption('Only corrections that reduced error on later, held-out dates can be activated. They affect future regular-season projections; saved predictions and confidence scores remain unchanged.')
         if latest['corrections']:
             if st.button('Activate validated corrections'):
