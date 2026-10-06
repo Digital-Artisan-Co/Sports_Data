@@ -24,6 +24,7 @@ def leader_rows(view):
 
 
 def historical_ceiling_rows(view):
+    if 'season_high' not in view:return view.iloc[:0].copy()
     rows=unique_props(view).dropna(subset=['projection','season_high'])
     records=[]
     for row in rows.to_dict('records'):

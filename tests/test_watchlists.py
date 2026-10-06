@@ -17,3 +17,8 @@ def test_ceiling_research_requires_observed_threshold_history():
     research=historical_ceiling_rows(rows)
     assert research.player_id.tolist()==['a']
     assert research.historical_hit_rate.tolist()==[10]
+
+
+def test_unavailable_preseason_projections_do_not_invent_ceiling_history():
+    rows=pd.DataFrame([dict(player_id='a',game_id='g',stat='pts',projection=None)])
+    assert historical_ceiling_rows(rows).empty
