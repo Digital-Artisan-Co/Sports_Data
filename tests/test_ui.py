@@ -10,7 +10,7 @@ def test_empty_pages_render():
 
 
 def test_date_selection_imports_once_and_clears_previous_date(monkeypatch):
-    from datetime import date,datetime,timezone
+    from datetime import date,datetime,timezone,timedelta
     from nba import sync
     calls=[]
     def load(provider,day,**kwargs):
@@ -20,12 +20,13 @@ def test_date_selection_imports_once_and_clears_previous_date(monkeypatch):
     monkeypatch.setattr(sync,'load_date',load)
     app=AppTest.from_file(str(Path(__file__).resolve().parents[1] / 'app.py')).run()
     assert len(calls)==1
-    app.sidebar.date_input[0].set_value(date(2026,10,6)).run()
-    assert calls[-1]=='2026-10-06' and len(calls)==2
+    next_day=app.sidebar.date_input[0].value+timedelta(days=1)
+    app.sidebar.date_input[0].set_value(next_day).run()
+    assert calls[-1]==str(next_day) and len(calls)==2
     app.run()
     assert len(calls)==2
-    app.sidebar.date_input[0].set_value(date(2026,10,7)).run()
-    assert app.session_state['date_result']['date']=='2026-10-07'
+    app.sidebar.date_input[0].set_value(next_day+timedelta(days=1)).run()
+    assert app.session_state['date_result']['date']==str(next_day+timedelta(days=1))
     assert app.session_state['bundle'] is None
     assert not app.exception
 

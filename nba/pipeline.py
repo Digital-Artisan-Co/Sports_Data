@@ -19,7 +19,7 @@ def validate_bundle(bundle):
             if not isinstance(g[k],(float,int)) or g[k]<0: raise ValueError(f'Invalid {k}')
     return bundle
 
-def run(bundle,cutoff,historical=False):
+def run(bundle,cutoff,historical=False,calibration=None):
     validate_bundle(bundle); cutoff=instant(cutoff); rows=[]
     logs_by_player=defaultdict(list)
     for log in bundle['logs']:logs_by_player[str(log['player_id'])].append(log)
@@ -31,6 +31,12 @@ def run(bundle,cutoff,historical=False):
         context=enrich(context)
         for stat in STATS.values():
             row=project(player,logs_by_player[str(player['player_id'])],stat,cutoff,context)
+            if calibration and row['projection'] is not None and player.get('season_type')=='Regular Season' and instant(calibration['trained_before'])<cutoff:
+                correction=calibration.get('corrections',{}).get(stat)
+                if correction is not None:
+                    row['baseline_projection']=row['projection']
+                    row['projection']=round(max(0,row['projection']-correction),2)
+                    row['model_version']='baseline-1+'+calibration['id']
             lines=[l for l in bundle.get('lines',[]) if str(l.get('player_id'))==str(player['player_id']) and str(l.get('game_id'))==str(player['game_id']) and l.get('stat')==stat and l.get('timestamp') and instant(l['timestamp'])<=cutoff]
             for line in lines or [{}]:
                 r={**row,'line':line.get('line'),'sportsbook':line.get('sportsbook'),'over_odds':line.get('over_odds'),'under_odds':line.get('under_odds'),'line_timestamp':line.get('timestamp'),'opening_line':line.get('opening_line'),'line_movement':line['line']-line['opening_line'] if line.get('opening_line') is not None else None,'line_fresh':bool(line) and (cutoff-instant(line['timestamp'])).total_seconds()<=21600,'data_source':bundle.get('source','Imported snapshot'),'feature_cutoff':cutoff.isoformat(),'historical_availability':'N/A — unavailable historically' if historical and (not context or not line) else None,'defensive_activity':context.get('defensive_activity'),'three_volume_support':context.get('three_volume_support')}

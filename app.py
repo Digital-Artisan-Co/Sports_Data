@@ -183,7 +183,10 @@ elif page=='Player Props':
                 'Status':g.get('game_status','Unknown')} for g in scheduled]),hide_index=True)
         scope={**bundle,'players':[p for p in bundle['players'] if slate_day(p['game_time'])==str(selected_date)]}
         now=datetime.now(timezone.utc)
-        rows=run(scope,now.isoformat())
+        rows=run(scope,now.isoformat(),calibration=store.active_calibration())
+        if rows:
+            store.save_automatic(rows,scope.get('source'),now.isoformat())
+            st.caption('Pregame projections are saved automatically for the completed-game audit.')
         if not rows:st.info('No upcoming games in the selected slate. View saved snapshots in Completed Games Audit.')
         else:
             df=pd.DataFrame(rows)
@@ -221,37 +224,8 @@ elif page=='Player Props':
                 except ValueError as e:st.error(str(e))
             st.download_button('Export projections',json.dumps(rows,indent=2),file_name='nba_projections.json')
 else:
-    rows=audit(store.snapshots(),store.results())
-    st.subheader(page)
-    if not rows:st.info('No matched saved predictions and final box scores. Import real data and save a pregame run first.')
-    else:
-        df=pd.DataFrame(rows)
-        dates=st.date_input('Date range',(date.today()-timedelta(days=90),date.today()))
-        if isinstance(dates,tuple) and len(dates)==2:df=df[(df.game_time.str[:10]>=str(dates[0]))&(df.game_time.str[:10]<=str(dates[1]))]
-        for key in ['stat','player','team','recommendation']:
-            values=st.multiselect(key,sorted(df[key].dropna().unique()))
-            if values:df=df[df[key].isin(values)]
-        confidence=st.slider('Confidence range',0,100,(0,100));df=df[df.confidence.between(*confidence)]
-        if st.checkbox('Hidden ceiling only'):df=df[df.hidden_ceiling==True]
-        filtered=df.to_dict('records')
-        st.dataframe(pd.DataFrame([{'stat':stat,**metrics([r for r in filtered if r['stat']==stat])} for stat in STATS.values()]),hide_index=True)
-        st.dataframe(df.drop(columns=['recent_stats','season_stats','context'],errors='ignore'),hide_index=True)
-        st.subheader('Leader capture comparison')
-        st.caption('Capture measures only the audited snapshot population; incomplete slate coverage cannot establish actual slate-wide leaders.')
-        st.dataframe(pd.DataFrame(capture(filtered)),hide_index=True)
-        if page=='NBA Model Retraining':
-            st.subheader('Calibration diagnostics')
-            for field in ['confidence','edge','line','top3_spike']:
-                if field not in df:continue
-                bins=pd.cut(df[field],10,duplicates='drop')
-                table=df.groupby(bins,observed=True).agg(count=('projection_error','size'),bias=('projection_error','mean'),MAE=('projection_error',lambda x:x.abs().mean()))
-                st.write(field);st.dataframe(table)
-            st.warning('Bias training produces a versioned candidate only. It does not activate unvalidated coefficients.')
-            if st.button('Train player/stat bias candidate'):
-                artifact=train_bias(filtered,datetime.now(timezone.utc).isoformat());identifier=store.artifact(artifact);st.json(artifact);st.success('Saved candidate '+identifier)
-        elif page=='Historical Backtesting':
-            st.info('Snapshot replay compares immutable pregame predictions to completed results. No present-day injuries or odds are substituted. New walk-forward reconstruction requires historical feature snapshots.')
-            st.download_button('Export audited backtest',df.to_csv(index=False),file_name='nba_backtest.csv')
+    from nba.review import render_review
+    render_review(st, store, providers, selected_date, page)
 
 with st.expander('Data Source Health Panel',expanded=False):
     for name,key in KEYS.items():

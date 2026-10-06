@@ -32,3 +32,24 @@ class Store:
     def artifact(self,payload):
         identifier=str(uuid.uuid4()); now=datetime.now(timezone.utc).isoformat()
         self.db.execute('INSERT INTO artifacts VALUES (?,?,?)',(identifier,now,json.dumps(payload))); self.db.commit(); return identifier
+
+    def save_automatic(self, rows, source, now=None):
+        """Save each upcoming game at most once per ten minutes, without overwrites."""
+        now=instant(now or datetime.now(timezone.utc).isoformat())
+        previous=self.snapshots()
+        saved=[]
+        games={str(r['game_id']) for r in rows if r.get('projection') is not None and instant(r['game_time'])>now}
+        for game in games:
+            recent=any((now-instant(s['created'])).total_seconds()<600 and
+                       any(str(r['game_id'])==game for r in s['rows']) for s in previous)
+            if recent:continue
+            saved.append(self.save({'rows':[r for r in rows if str(r['game_id'])==game],
+                                    'source':source,'automatic':True},now.isoformat()))
+        return saved
+
+    def artifacts(self):
+        return [{'id':i,'created':c,**json.loads(p)} for i,c,p in self.db.execute('SELECT * FROM artifacts ORDER BY created')]
+
+    def active_calibration(self):
+        active=[a for a in self.artifacts() if a.get('status')=='active' and a.get('version')=='stat-bias-2']
+        return active[-1] if active else None

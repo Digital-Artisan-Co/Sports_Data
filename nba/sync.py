@@ -109,6 +109,13 @@ def load_date(provider,date,now=None,snapshots=(),progress=None):
             if any(g.get('completed') for g in games) and not result['actual_rows']:
                 result['warnings'].append('Completed box scores unavailable for this date; saved predictions are preserved.')
         except ProviderError as e:result['warnings'].append(str(e))
+    if historical or any(g.get('completed') for g in games):
+        from .boxscores import final_boxscores
+        matched_games={r['game_id'] for r in result['actual_rows']}
+        for game in games:
+            if game.get('completed') and game['game_id'] not in matched_games:
+                try:result['actual_rows'].extend(final_boxscores(provider,game,stamp))
+                except ProviderError as e:result['warnings'].append(str(e))
     if historical:
         result['warnings'].append('Historical odds/injuries: N/A — unavailable historically unless recorded in a saved pregame snapshot.')
         stage('Loaded saved pregame predictions; no current roster, injuries or odds used')

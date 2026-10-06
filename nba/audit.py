@@ -4,19 +4,24 @@ from .model import instant
 
 def audit(snapshots,results):
     output=[]
-    for snap in snapshots:
+    # Most recent saved pregame version per offer; reruns must not multiply accuracy.
+    latest={}
+    for snap in sorted(snapshots,key=lambda s:s['created']):
         for r in snap['rows']:
-            actual=results.get((str(r['game_id']),str(r['player_id'])))
-            if not actual or r.get('projection') is None: continue
-            value=actual[r['stat']]; error=r['projection']-value; line=r.get('line')
-            ou=None if line is None else ('Over' if value>line else 'Under' if value<line else 'Push')
-            rec=r.get('recommendation','No Play'); side='Over' if 'Over' in rec else 'Under' if 'Under' in rec else None
-            driver=actual.get('observed_driver')
-            if not driver:
-                if abs(actual['min']-r['projected_minutes'])>=6: driver='minutes miss'
-                elif r['stat'] in ('stl','blk'): driver='defensive stat variance'
-                else: driver='model over-projection' if error>0 else 'model under-projection' if error<0 else 'on target'
-            output.append({**r,'snapshot_id':snap['id'],'snapshot_time':snap['created'],'actual':value,'result_known_at':actual.get('known_at'),'actual_minutes':actual['min'],'projection_error':error,'ou_result':ou,'recommendation_result':None if side is None or ou is None else 'Push' if ou=='Push' else 'Win' if ou==side else 'Loss','observed_driver':driver,'driver_evidence':'reported' if actual.get('observed_driver') else 'heuristic — cause unconfirmed'})
+            if instant(snap['created'])>=instant(r['game_time']):continue
+            latest[(str(r['game_id']),str(r['player_id']),r['stat'],r.get('sportsbook'))]=(snap,r)
+    for snap,r in latest.values():
+        actual=results.get((str(r['game_id']),str(r['player_id'])))
+        if not actual or r.get('projection') is None: continue
+        value=actual[r['stat']]; error=r['projection']-value; line=r.get('line')
+        ou=None if line is None else ('Over' if value>line else 'Under' if value<line else 'Push')
+        rec=r.get('recommendation','No Play'); side='Over' if 'Over' in rec else 'Under' if 'Under' in rec else None
+        driver=actual.get('observed_driver')
+        if not driver:
+            if abs(actual['min']-r['projected_minutes'])>=6: driver='minutes miss'
+            elif r['stat'] in ('stl','blk'): driver='defensive stat variance'
+            else: driver='model over-projection' if error>0 else 'model under-projection' if error<0 else 'on target'
+        output.append({**r,'snapshot_id':snap['id'],'snapshot_time':snap['created'],'actual':value,'result_known_at':actual.get('known_at'),'actual_minutes':actual['min'],'projection_error':error,'ou_result':ou,'recommendation_result':None if side is None or ou is None else 'Push' if ou=='Push' else 'Win' if ou==side else 'Loss','observed_driver':driver,'driver_evidence':'reported' if actual.get('observed_driver') else 'heuristic — cause unconfirmed'})
     return output
 
 def metrics(rows):
@@ -32,12 +37,13 @@ def metrics(rows):
 
 def capture(rows):
     grouped=defaultdict(list)
-    for r in rows: grouped[(r['snapshot_id'],r['stat'])].append(r)
+    from .schedule import slate_day
+    for r in rows: grouped[(slate_day(r['game_time']),r['stat'])].append(r)
     results=[]
     for (snapshot,stat),group in grouped.items():
         # One row per player per slate: books must not multiply leaders.
         unique=list({str(r['player_id']):r for r in group}.values())
-        methods={'Projected Stat':lambda r:r['projection'],'Opportunity':lambda r:r.get('opportunity'),'Ceiling':lambda r:r.get('ceiling'),'Top-3 Spike':lambda r:r.get('top3_spike'),'Prop line':lambda r:r.get('line'),'Projection × Opportunity':lambda r:r['projection']*r['opportunity'] if r.get('opportunity') is not None else None,'Opportunity × Ceiling':lambda r:r['opportunity']*r['ceiling'] if r.get('opportunity') is not None else None}
+        methods={'Projected Stat':lambda r:r['projection'],'Opportunity':lambda r:r.get('opportunity'),'Ceiling':lambda r:r.get('ceiling'),'Top-3 Spike':lambda r:r.get('top3_spike'),'Prop line':lambda r:r.get('line'),'Projection × Opportunity':lambda r:r['projection']*r['opportunity'] if r.get('opportunity') is not None else None,'Opportunity × Ceiling':lambda r:r['opportunity']*r['ceiling'] if r.get('opportunity') is not None and r.get('ceiling') is not None else None}
         for k in (3,5):
             if len(unique)<k: continue
             cutoff=sorted((r['actual'] for r in unique),reverse=True)[k-1]
