@@ -4,7 +4,7 @@ from collections import defaultdict
 from datetime import date as Date,datetime,timezone
 from .model import instant
 from .schedule import slate_day
-from .providers import ProviderError
+from .errors import ProviderError
 from .slate import build_nba_slate,add_preseason_context
 
 

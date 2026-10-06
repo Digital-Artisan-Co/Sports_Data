@@ -6,7 +6,8 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 from nba.model import STATS
-from nba.providers import Providers, ProviderError, KEYS
+from nba.providers import Providers, KEYS
+from nba.errors import ProviderError
 from nba.storage import Store
 from nba.runtime import DATA_DIR, save_cache
 from nba.slate import build_nba_slate, add_preseason_context
@@ -40,7 +41,12 @@ if os.getenv('APP_ACCESS_PASSWORD'):
 st.title('NBA Player Props Model')
 st.caption('Auditable individual-stat projections · Baseline models are not yet historically calibrated')
 pd.set_option('future.no_silent_downcasting', True)
-store=Store(); providers=st.session_state.setdefault('providers',Providers(prefer_snapshots=True))
+store=Store()
+# An open browser can outlive a provider module update. Replace only its client,
+# preserving saved predictions, credentials and imported user data.
+if type(st.session_state.get('providers')) is not Providers:
+    st.session_state['providers']=Providers(prefer_snapshots=True)
+providers=st.session_state['providers']
 page=st.sidebar.radio('Section',['Player Props','Completed Games Audit','NBA Model Retraining','Historical Backtesting','Data Sources & Import'],key='section')
 selected_date=st.sidebar.date_input('Date',datetime.now(ZoneInfo(SLATE_TZ)).date(),key='slate_date')
 cutoff=datetime.combine(selected_date,time.min,tzinfo=timezone.utc)

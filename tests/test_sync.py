@@ -70,3 +70,24 @@ def test_results_match_complete_game_and_both_teams():
     result=completed_results([{**GAME,'completed':True}],rows,'2026-10-06','2026-10-07T12:00:00Z')
     assert len(result)==2 and all(r['game_id']=='g' for r in result)
     assert completed_results([GAME],rows,'2026-10-06','2026-10-07T12:00:00Z')==[]
+
+
+def test_provider_reload_preserves_error_handler_and_prior_season_fallback(monkeypatch):
+    import importlib
+    import nba.providers as module
+    from nba.errors import ProviderError as stable_error
+    old_error=module.ProviderError
+    importlib.reload(module)
+    assert module.ProviderError is old_error is stable_error
+    monkeypatch.delenv('ODDS_API_KEY',raising=False)
+    monkeypatch.delenv('BALLDONTLIE_API_KEY',raising=False)
+    p=Provider([{**GAME,'season_type':'Regular Season','game_time':'2026-10-20T23:00:00Z'}])
+    history=[{'player_id':'p','date':'2026-04-01','min':30,'pts':20}]
+    def logs(season,kind):
+        if season=='2026-27':raise module.ProviderError('Current season has no usable snapshot')
+        return history
+    p.nba_logs=logs
+    result=load_date(p,'2026-10-20',now='2026-10-06T12:00:00Z')
+    assert result['bundle']['logs']==history
+    assert len(result['bundle']['players'])==2
+    assert any('Current-season logs unavailable' in w for w in result['warnings'])

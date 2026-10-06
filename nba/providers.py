@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import requests
 
 KEYS={'BallDontLie':'BALLDONTLIE_API_KEY','SportsDataIO':'SPORTSDATAIO_API_KEY','The Odds API':'ODDS_API_KEY'}
-class ProviderError(RuntimeError): pass
+from .errors import ProviderError
 
 class Providers:
     def __init__(self,allow_snapshots=True,prefer_snapshots=False): self.health={}; self.allow_snapshots=allow_snapshots; self.prefer_snapshots=prefer_snapshots
