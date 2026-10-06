@@ -135,12 +135,13 @@ def load_date(provider,date,now=None,snapshots=(),progress=None):
         try:prelogs=resource('nba_logs',season,'Pre Season')
         except ProviderError as e:prelogs=[];result['warnings'].append(str(e))
         add_preseason_context(bundle,prelogs,stamp)
-    if os.getenv('BALLDONTLIE_API_KEY'):
+    configured=getattr(provider,'configured',lambda key:bool(os.getenv(key)))
+    if configured('BALLDONTLIE_API_KEY'):
         stage('Importing configured injury feed')
         try:attach_injuries(bundle,resource('injuries'),stamp)
         except ProviderError as e:result['warnings'].append(str(e))
     else:result['warnings'].append('Injuries UNAVAILABLE — missing API key: BALLDONTLIE_API_KEY')
-    if os.getenv('ODDS_API_KEY'):
+    if configured('ODDS_API_KEY'):
         stage('Importing and matching sportsbook lines')
         try:
             unmatched=attach_lines(bundle,resource('odds',date))

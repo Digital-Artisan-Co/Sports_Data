@@ -45,7 +45,7 @@ store=Store()
 # An open browser can outlive a provider module update. Replace only its client,
 # preserving saved predictions, credentials and imported user data.
 if type(st.session_state.get('providers')) is not Providers:
-    st.session_state['providers']=Providers(prefer_snapshots=True)
+    st.session_state['providers']=Providers(prefer_snapshots=True,credentials=st.session_state.get('api_credentials',{}))
 providers=st.session_state['providers']
 page=st.sidebar.radio('Section',['Player Props','Completed Games Audit','NBA Model Retraining','Historical Backtesting','Data Sources & Import'],key='section')
 selected_date=st.sidebar.date_input('Date',datetime.now(ZoneInfo(SLATE_TZ)).date(),key='slate_date')
@@ -88,9 +88,11 @@ if page in ('Player Props','Data Sources & Import'):
     for warning in current.get('warnings',[]):st.warning(warning)
 
 if page=='Data Sources & Import':
+    from nba.credentials import render_credentials
+    render_credentials(st, providers, selected_date)
     st.subheader('Data Source Health Panel')
     for provider,key in KEYS.items():
-        st.write(provider, providers.health.get(provider,{'status':'Configured — not yet verified' if os.getenv(key) else 'UNAVAILABLE — missing API key','required_key':key}))
+        st.write(provider, providers.health.get(provider,{'status':'Configured — not yet verified' if providers.configured(key) else 'UNAVAILABLE — missing API key','required_key':key}))
     st.write('NBA.com',providers.health.get('NBA.com',{'status':'Not yet checked; no API key required'}))
     st.info('Provider subscription tiers may restrict injuries, advanced statistics, or prop markets. Raw imports retain provider IDs; cross-provider player/game mappings require explicit matching.')
     st.info('Changing the sidebar date automatically imports the schedule, season history, roster and available configured odds/injuries. The controls below are optional diagnostics and manual imports.')
@@ -235,7 +237,7 @@ else:
 
 with st.expander('Data Source Health Panel',expanded=False):
     for name,key in KEYS.items():
-        status=providers.health.get(name,{'status':'Configured — not yet verified' if os.getenv(key) else 'UNAVAILABLE — missing API key','required_key':key})
+        status=providers.health.get(name,{'status':'Configured — not yet verified' if providers.configured(key) else 'UNAVAILABLE — missing API key','required_key':key})
         st.write(name,status)
     st.write('NBA.com',providers.health.get('NBA.com',{'status':'Not checked'}))
     for source in ('NBA roster','ESPN schedule'):

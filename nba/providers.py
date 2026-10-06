@@ -8,16 +8,22 @@ KEYS={'BallDontLie':'BALLDONTLIE_API_KEY','SportsDataIO':'SPORTSDATAIO_API_KEY',
 from .errors import ProviderError
 
 class Providers:
-    def __init__(self,allow_snapshots=True,prefer_snapshots=False): self.health={}; self.allow_snapshots=allow_snapshots; self.prefer_snapshots=prefer_snapshots
+    def __init__(self,allow_snapshots=True,prefer_snapshots=False,credentials=None):
+        self.health={}; self.allow_snapshots=allow_snapshots; self.prefer_snapshots=prefer_snapshots
+        self._credentials=dict(credentials or {})
+    def key_value(self,name):
+        return self._credentials.get(name) or os.getenv(name)
+    def configured(self,name):
+        return bool(self.key_value(name))
     def get(self, provider, endpoint, params=None):
         key=KEYS.get(provider)
-        if key and not os.getenv(key):
+        if key and not self.configured(key):
             self.health[provider]={'status':'UNAVAILABLE — missing API key','required_key':key,'endpoint':endpoint}
             raise ProviderError(f'UNAVAILABLE — missing API key: {key}')
         headers={}; query=dict(params or {})
-        if provider=='BallDontLie': headers['Authorization']=os.environ[key]
-        elif provider=='SportsDataIO': headers['Ocp-Apim-Subscription-Key']=os.environ[key]
-        elif provider=='The Odds API': query['apiKey']=os.environ[key]
+        if provider=='BallDontLie': headers['Authorization']=self.key_value(key)
+        elif provider=='SportsDataIO': headers['Ocp-Apim-Subscription-Key']=self.key_value(key)
+        elif provider=='The Odds API': query['apiKey']=self.key_value(key)
         try:
             r=requests.get(endpoint,params=query,headers=headers,timeout=25)
             if r.status_code!=200:
