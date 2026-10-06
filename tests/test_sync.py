@@ -12,6 +12,7 @@ class Provider:
         self.calls.append(('logs',season,kind))
         return []
     def injuries(self):self.calls.append(('injuries',));return []
+    def sportsdataio(self,resource,date):self.calls.append(('sportsdataio',resource));return []
     def odds(self,date):self.calls.append(('odds',date));return []
 
 
@@ -91,3 +92,24 @@ def test_provider_reload_preserves_error_handler_and_prior_season_fallback(monke
     assert result['bundle']['logs']==history
     assert len(result['bundle']['players'])==2
     assert any('Current-season logs unavailable' in w for w in result['warnings'])
+
+
+def test_free_injury_coverage_skips_keyed_providers(monkeypatch):
+    monkeypatch.setenv('BALLDONTLIE_API_KEY','test-only')
+    monkeypatch.setenv('SPORTSDATAIO_API_KEY','test-only')
+    monkeypatch.delenv('ODDS_API_KEY',raising=False)
+    p=Provider()
+    p.free_injuries=lambda:[{'player':{'first_name':'Fixture','last_name':suffix},'status':'Out'} for suffix in ['One','Two']]
+    result=load_date(p,'2026-10-06',now='2026-10-05T12:00:00Z')
+    assert ('injuries',) not in p.calls
+    assert all(c['injury_source']=='ESPN free injury report' for c in result['bundle']['contexts'].values())
+
+
+def test_injury_fallback_never_overwrites_free_observation():
+    from nba.sync import attach_injuries
+    bundle={'players':ROSTER,'contexts':{}}
+    def report(status):return [{'player':{'first_name':'Fixture','last_name':'One'},'status':status}]
+    attach_injuries(bundle,report('Out'),'2026-10-05',source='Free report')
+    attach_injuries(bundle,report('Available'),'2026-10-05',source='Keyed fallback')
+    assert bundle['contexts']['p']['injury_status']=='Out'
+    assert bundle['contexts']['p']['injury_source']=='Free report'

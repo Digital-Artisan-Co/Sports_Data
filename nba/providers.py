@@ -172,3 +172,17 @@ class Providers:
         data=self.get('ESPN schedule','https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard',
             {'dates':start.strftime('%Y%m%d')+'-'+end.strftime('%Y%m%d'),'limit':1000})
         return sorted({slate_day(g['date']) for g in data.get('events',[]) if g.get('date') and slate_day(g['date'])>=date})
+
+    def free_injuries(self):
+        payload=self.get('ESPN injuries','https://site.api.espn.com/apis/site/v2/sports/basketball/nba/injuries')
+        if not isinstance(payload.get('injuries'),list):raise ProviderError('Free injury report unavailable')
+        rows=[]
+        for team in payload['injuries']:
+            for injury in team.get('injuries',[]):
+                athlete=injury.get('athlete',{})
+                name=athlete.get('displayName') or athlete.get('fullName')
+                if not name:continue
+                parts=name.split(' ',1)
+                rows.append({'player':{'first_name':parts[0],'last_name':parts[1] if len(parts)>1 else ''},
+                             'status':injury.get('status','Unknown')})
+        return rows

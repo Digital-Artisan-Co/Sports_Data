@@ -46,7 +46,7 @@ def attach_lines(bundle,raw):
     return len(raw)-len(matched)
 
 
-def attach_injuries(bundle,raw,known_at):
+def attach_injuries(bundle,raw,known_at,source='BallDontLie'):
     count=0
     for injury in raw:
         p=injury.get('player') or {}
@@ -58,7 +58,8 @@ def attach_injuries(bundle,raw,known_at):
         status=str(injury.get('status','Unknown')).title()
         if status not in ('Available','Probable','Questionable','Doubtful','Out'):status='Unknown'
         context=bundle['contexts'].setdefault(str(player['player_id']),{})
-        context.update(known_at=known_at,injury_status=status,injury_source='BallDontLie')
+        if context.get('injury_status') not in (None,'Unknown'):continue
+        context.update(known_at=known_at,injury_status=status,injury_source=source)
         count+=1
     return count
 
@@ -136,11 +137,25 @@ def load_date(provider,date,now=None,snapshots=(),progress=None):
         except ProviderError as e:prelogs=[];result['warnings'].append(str(e))
         add_preseason_context(bundle,prelogs,stamp)
     configured=getattr(provider,'configured',lambda key:bool(os.getenv(key)))
-    if configured('BALLDONTLIE_API_KEY'):
-        stage('Importing configured injury feed')
+    stage('Checking free injury reports first')
+    if hasattr(provider,'free_injuries'):
+        try:attach_injuries(bundle,resource('free_injuries'),stamp,source='ESPN free injury report')
+        except ProviderError as e:result['warnings'].append(str(e))
+    def unresolved():
+        return any(bundle['contexts'].get(str(p['player_id']),{}).get('injury_status') in (None,'Unknown') for p in bundle['players'])
+    if unresolved() and configured('BALLDONTLIE_API_KEY'):
+        stage('Filling missing injury statuses from BallDontLie')
         try:attach_injuries(bundle,resource('injuries'),stamp)
         except ProviderError as e:result['warnings'].append(str(e))
-    else:result['warnings'].append('Injuries UNAVAILABLE — missing API key: BALLDONTLIE_API_KEY')
+    if unresolved() and configured('SPORTSDATAIO_API_KEY'):
+        stage('Filling remaining injury statuses from SportsDataIO')
+        try:
+            raw=resource('sportsdataio','injuries',date)
+            normalized=[{'player':{'first_name':p.get('FirstName',''),'last_name':p.get('LastName','')},
+                         'status':p.get('InjuryStatus') or 'Unknown'} for p in raw]
+            attach_injuries(bundle,normalized,stamp,source='SportsDataIO')
+        except ProviderError as e:result['warnings'].append(str(e))
+    if unresolved():result['warnings'].append('Some injury statuses remain unknown. Absence from an injury report does not establish availability.')
     if configured('ODDS_API_KEY'):
         stage('Importing and matching sportsbook lines')
         try:

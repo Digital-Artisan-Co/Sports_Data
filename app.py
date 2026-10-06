@@ -90,6 +90,7 @@ if page in ('Player Props','Data Sources & Import'):
 if page=='Data Sources & Import':
     from nba.credentials import render_credentials
     render_credentials(st, providers, selected_date)
+    st.info('Source priority: free NBA.com data / valid NBA snapshots for rosters and history; free ESPN schedule, lineups and box-score fallback. Free injury reports first, then configured BallDontLie and SportsDataIO for unresolved statuses. The Odds API supplies sportsbook props, which NBA.com does not provide. Historical dates never use current injuries.')
     st.subheader('Data Source Health Panel')
     for provider,key in KEYS.items():
         st.write(provider, providers.health.get(provider,{'status':'Configured — not yet verified' if providers.configured(key) else 'UNAVAILABLE — missing API key','required_key':key}))
